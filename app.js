@@ -1,80 +1,67 @@
+// ==================== IMPORTS ====================
 const express = require("express");
 const mongoose = require("mongoose");
-const app = express();
 const cors = require("cors");
-const { name } = require("ejs");
-const  nodemailer = require("nodemailer");
+const nodemailer = require("nodemailer");
 const multer = require("multer");
 const path = require("path");
+require("dotenv").config(); // allows local .env usage
 
-
+// ==================== APP INIT ====================
+const app = express();
 app.use(cors());
 app.use(express.json());
 
-
-//create transporter
+// ==================== NODEMAILER ====================
 const transporter = nodemailer.createTransport({
-    service:"gmail",
-    auth:{
-        user:"siddeshparte04@gmail.com",
-        pass:"pkjw yxpy qqwy ewxn"
-    },
-    tls: {
-    rejectUnauthorized: false // ignore self-signed certificate
-  }
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER, // from environment variable
+    pass: process.env.EMAIL_PASS, // from environment variable
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
 
-
-
+// ==================== FORGET PASSWORD ====================
 app.post("/forgetpass", async (req, res) => {
   try {
-    // Update mailOptions dynamically if needed
     const mailOptions = {
-      from: "siddeshpart04@gmail.com",
-      to: "siddeshparte106@gmail.com",  // <-- recipient email here
-      subject: "alert from MusicMate",
-      text: "username:siddhu04 password:siddhu@123"
-      
+      from: process.env.EMAIL_USER,
+      to: "siddeshparte106@gmail.com", // recipient
+      subject: "Alert from MusicMate",
+      text: "username: siddhu04  password: siddhu@123",
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", info.response);
+    console.log("📧 Email sent:", info.response);
     res.status(200).json({ msg: "Email sent successfully", info: info.response });
   } catch (err) {
-    console.error("Error sending email:", err);
+    console.error("❌ Error sending email:", err);
     res.status(500).json({ msg: "Failed to send email", error: err.message });
   }
 });
 
+// ==================== ADMIN LOGIN ====================
+app.post("/admin/login", async (req, res) => {
+  const { username, pass } = req.body;
 
-//authentication of admin 
+  if (!username || !pass) {
+    return res.status(400).json({ msg: "All fields are required" });
+  }
 
-app.post("/admin/login",async(req,res) => {
-    console.log("request body:",req.body);
-     const body = req.body;
-     if(
-        !body ||
-        !body.username ||
-        !body.pass
-     ){
-        return res.status(400).json({msg:"all fields are req"});
-     }
+  const ADMIN_USER = "siddhu04";
+  const ADMIN_PASS = "siddhu@123";
 
-     const username = "siddhu04"
-     const pass = "siddhu@123"
-
-     if(body.username == username && body.pass == pass){
-        return res.status(201).json({ msg:"successfully login"});
-     }
-     else{
-        return res.status(404).json({msg:"invalid credesntial"});
-     }
+  if (username === ADMIN_USER && pass === ADMIN_PASS) {
+    return res.status(200).json({ msg: "Successfully logged in" });
+  } else {
+    return res.status(401).json({ msg: "Invalid credentials" });
+  }
 });
 
-// malter music file upload code here
-
-// Multer configuration
-// Multer storage
+// ==================== MULTER SETUP ====================
 const musicStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     if (file.fieldname === "musicFile") cb(null, "musics/");
@@ -87,7 +74,29 @@ const musicStorage = multer.diskStorage({
 
 const upload = multer({ storage: musicStorage });
 
-// Upload route for both music and image
+// ==================== DATABASE CONNECTION ====================
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.log("❌ MongoDB Connection Error:", err));
+
+// ==================== MONGOOSE SCHEMA ====================
+const userSchema = new mongoose.Schema(
+  {
+    musicName: { type: String, required: true },
+    artistName: { type: String, required: true },
+    musicImg: { type: String },
+    musicUrl: { type: String },
+  },
+  { timestamps: true }
+);
+
+const SongData = mongoose.model("SongData", userSchema);
+
+// ==================== UPLOAD MUSIC + IMAGE ====================
 app.post(
   "/api/admin",
   upload.fields([
@@ -98,12 +107,18 @@ app.post(
     try {
       const { musicName, artistName } = req.body;
 
-      if (!musicName || !artistName || !req.files?.musicFile || !req.files?.musicImgFile) {
+      if (
+        !musicName ||
+        !artistName ||
+        !req.files?.musicFile ||
+        !req.files?.musicImgFile
+      ) {
         return res.status(400).json({ msg: "All fields and files are required" });
       }
 
-      const musicUrl = `http://localhost:5000/musics/${req.files.musicFile[0].filename}`;
-      const musicImg = `http://localhost:5000/images/${req.files.musicImgFile[0].filename}`;
+      const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+      const musicUrl = `${BASE_URL}/musics/${req.files.musicFile[0].filename}`;
+      const musicImg = `${BASE_URL}/images/${req.files.musicImgFile[0].filename}`;
 
       const song = await SongData.create({
         musicName,
@@ -120,93 +135,26 @@ app.post(
   }
 );
 
-// Serve folders
+// ==================== SERVE STATIC FILES ====================
 app.use("/musics", express.static(path.join(__dirname, "musics")));
 app.use("/images", express.static(path.join(__dirname, "images")));
 
-
-
-
-
-//connection
-mongoose.connect("mongodb://127.0.0.1:27017/musicDB")
-.then(()=> console.log("mongoDB connected..."))
-.catch(err => console.log("mongo ERROR:",err));
-
-// Schema
-
-const userSchema = new mongoose.Schema({
-    musicName:{
-        type:String,
-        require:true,
-    },
-    artistName:{
-        type:String,
-        require:true,
-    },
-    musicImg:{
-        type:String,
-    },
-    musicUrl:{
-        type:String,
-    }
-}
-,{
-    timestamps: true
-});
-
-//model
-const SongData = mongoose.model('songData',userSchema);
-
-//post
-
-app.post("/api/admin", async(req,res) => {
-    console.log("request body:",req.body);
-    const body = req.body;
-    if(
-        !body ||
-        !body.musicImg ||
-        !body.artistName ||
-        !body.musicImg ||
-        !body.musicUrl
-    ){
-        return res.status(400).json({msg:"all fields are req..."})
-    }
-
-    const result = await SongData.create({
-        musicName:body.musicName,
-        artistName: body.artistName,
-        musicImg: body.musicImg,
-        musicUrl: body.musicUrl
-    });
-
-    console.log("result:",result);
-    return res.status(201).json({msg:"success"});
-});
-
-
-//get
-
+// ==================== FETCH ALL SONGS ====================
 app.get("/admin", async (req, res) => {
   try {
-    const allDBsongs = await SongData.find({});
-    res.json(allDBsongs);
+    const allSongs = await SongData.find({});
+    res.json(allSongs);
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
 });
 
-
-//search get
-
-app.get("/serachsong", async (req, res) => {
+// ==================== SEARCH SONG ====================
+app.get("/searchsong", async (req, res) => {
   try {
     const query = req.query.query?.trim();
-
-    if (!query) {
-      return res.status(400).json({ message: "no any result" });
-    }
+    if (!query) return res.status(400).json({ msg: "No search query provided" });
 
     const result = await SongData.find({
       musicName: { $regex: query, $options: "i" },
@@ -214,24 +162,16 @@ app.get("/serachsong", async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Server error" });
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
   }
 });
 
-
-// delete
-
+// ==================== DELETE SONG ====================
 app.delete("/delete/:id", async (req, res) => {
-  const id = req.params.id;
-
   try {
-    // Example: deleting from MongoDB
-    const result = await SongData.findByIdAndDelete(id);
-
-    if (!result) {
-      return res.status(404).json({ msg: "Item not found" });
-    }
+    const result = await SongData.findByIdAndDelete(req.params.id);
+    if (!result) return res.status(404).json({ msg: "Item not found" });
 
     res.status(200).json({ msg: "Deleted successfully", result });
   } catch (err) {
@@ -239,22 +179,17 @@ app.delete("/delete/:id", async (req, res) => {
   }
 });
 
-//update
-
+// ==================== UPDATE SONG ====================
 app.patch("/update/:id", async (req, res) => {
-  const id = req.params.id;
-  const updates = req.body; // JSON body with fields to update
-
   try {
+    const updates = req.body;
     const updatedSong = await SongData.findByIdAndUpdate(
-      id,
-      { $set: updates }, // only update specified fields
-      { new: true }      // return the updated document
+      req.params.id,
+      { $set: updates },
+      { new: true }
     );
 
-    if (!updatedSong) {
-      return res.status(404).json({ msg: "Song not found" });
-    }
+    if (!updatedSong) return res.status(404).json({ msg: "Song not found" });
 
     res.status(200).json({ msg: "Song updated successfully", updatedSong });
   } catch (err) {
@@ -262,7 +197,8 @@ app.patch("/update/:id", async (req, res) => {
   }
 });
 
-
-app.listen(5000, ()=> {
-    console.log("server running on : http://localhost:5000");
-})
+// ==================== START SERVER ====================
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
